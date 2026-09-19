@@ -56,6 +56,7 @@
         <el-option v-for="s in ['OPEN','NETTED','SETTLED','CANCELLED']" :key="s" :label="s" :value="s" />
       </el-select>
       <el-button type="primary" @click="load">查询</el-button>
+      <el-button :loading="exporting" @click="exportCsv">导出 CSV</el-button>
     </div>
 
     <div class="card-panel">
@@ -85,7 +86,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import api from '../api/client'
+import api, { downloadCsv } from '../api/client'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
@@ -93,6 +94,7 @@ const members = ref([])
 const rows = ref([])
 const loading = ref(false)
 const saving = ref(false)
+const exporting = ref(false)
 const today = new Date().toISOString().slice(0, 10)
 
 const form = reactive({
@@ -122,17 +124,34 @@ async function loadMembers() {
   members.value = data
 }
 
+function filterParams() {
+  const params = {}
+  if (filters.currency) params.currency = filters.currency
+  if (filters.settleDate) params.settleDate = filters.settleDate
+  if (filters.status) params.status = filters.status
+  return params
+}
+
 async function load() {
   loading.value = true
   try {
-    const params = {}
-    if (filters.currency) params.currency = filters.currency
-    if (filters.settleDate) params.settleDate = filters.settleDate
-    if (filters.status) params.status = filters.status
-    const { data } = await api.get('/obligations', { params })
+    const { data } = await api.get('/obligations', { params: filterParams() })
     rows.value = data
   } finally {
     loading.value = false
+  }
+}
+
+// 走服务端独立导出接口，复用当前币种/交割日/状态筛选；筛选为空时导出空表并提示
+async function exportCsv() {
+  exporting.value = true
+  try {
+    if (!rows.value.length) {
+      ElMessage.warning('当前筛选无数据，导出为空表')
+    }
+    await downloadCsv('/obligations/export', filterParams(), 'obligations.csv')
+  } finally {
+    exporting.value = false
   }
 }
 

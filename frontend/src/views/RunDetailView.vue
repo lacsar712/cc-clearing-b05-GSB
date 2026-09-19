@@ -6,6 +6,7 @@
     <div class="toolbar">
       <el-button @click="$router.back()">返回</el-button>
       <el-button @click="load">刷新</el-button>
+      <el-button :loading="exporting" @click="exportPositions">导出净头寸</el-button>
       <el-button
         type="success"
         :disabled="!auth.isOperator || detail?.run?.status !== 'COMPLETED' || alreadySettled"
@@ -60,13 +61,14 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import api from '../api/client'
+import api, { downloadCsv } from '../api/client'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
 const route = useRoute()
 const loading = ref(false)
 const settling = ref(false)
+const exporting = ref(false)
 const detail = ref(null)
 
 const alreadySettled = computed(() =>
@@ -96,6 +98,23 @@ async function settle() {
     await load()
   } finally {
     settling.value = false
+  }
+}
+
+// 按当前批次导出净头寸 CSV，列与页面净头寸表格一致
+async function exportPositions() {
+  exporting.value = true
+  try {
+    if (!detail.value?.positions?.length) {
+      ElMessage.warning('该批次暂无净头寸，导出为空表')
+    }
+    await downloadCsv(
+      `/netting-runs/${route.params.id}/positions/export`,
+      {},
+      `netting-run-${route.params.id}-positions.csv`
+    )
+  } finally {
+    exporting.value = false
   }
 }
 

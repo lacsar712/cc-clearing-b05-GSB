@@ -9,6 +9,9 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -52,6 +55,36 @@ public class ObligationController {
                 request.amount(),
                 request.tradeDate(),
                 request.settleDate()));
+    }
+
+    /**
+     * CSV export of the obligation list. Reuses the exact same currency/settleDate/status
+     * filters as {@link #list} so the file always matches the on-screen query; when the
+     * filtered result is empty a header-only CSV is returned (never the full table).
+     */
+    @GetMapping("/export")
+    public ResponseEntity<byte[]> export(
+            @RequestParam(required = false) String currency,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate settleDate,
+            @RequestParam(required = false) ObligationStatus status) {
+        AuthContext.require();
+        List<TradeObligation> obligations = obligationService.list(currency, settleDate, status);
+        List<List<String>> rows = obligations.stream()
+                .map(o -> List.of(
+                        o.getObligationId(),
+                        o.getPayerMemberId(),
+                        o.getPayeeMemberId(),
+                        o.getCurrency(),
+                        o.getAmount().toPlainString(),
+                        o.getSettleDate().toString(),
+                        o.getStatus().name()))
+                .collect(Collectors.toList());
+        byte[] csv = CsvUtils.toCsvBytes(
+                List.of("义务 ID", "付款方", "收款方", "币种", "金额", "交割日", "状态"), rows);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"obligations.csv\"")
+                .body(csv);
     }
 
     public record CreateObligationRequest(

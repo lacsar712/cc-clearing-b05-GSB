@@ -34,3 +34,18 @@ api.interceptors.response.use(
 )
 
 export default api
+
+// Server-side CSV export download: hits the dedicated export endpoint with the
+// current query params and saves the returned blob as a file. Read-only, so it
+// is available to viewer accounts as well.
+export async function downloadCsv(url, params, filename) {
+  const resp = await api.get(url, { params, responseType: 'blob' })
+  const blobUrl = URL.createObjectURL(new Blob([resp.data], { type: 'text/csv;charset=UTF-8' }))
+  const a = document.createElement('a')
+  a.href = blobUrl
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(blobUrl)
+}

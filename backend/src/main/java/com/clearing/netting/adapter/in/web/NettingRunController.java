@@ -10,6 +10,9 @@ import com.clearing.netting.domain.model.TradeObligation;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -67,6 +70,29 @@ public class NettingRunController {
     public List<PositionResponse> positions(@PathVariable("id") String id) {
         AuthContext.require();
         return nettingService.getPositions(id).stream().map(PositionResponse::from).collect(Collectors.toList());
+    }
+
+    /**
+     * CSV export of this run's net positions, aligned column-by-column with the
+     * detail page's 净头寸 table (会员 ID / 币种 / 净头寸). Empty runs export a
+     * header-only CSV.
+     */
+    @GetMapping("/{id}/positions/export")
+    public ResponseEntity<byte[]> exportPositions(@PathVariable("id") String id) {
+        AuthContext.require();
+        List<NetPosition> positions = nettingService.getPositions(id);
+        List<List<String>> rows = positions.stream()
+                .map(p -> List.of(
+                        p.getMemberId(),
+                        p.getCurrency(),
+                        p.getNetAmount().toPlainString()))
+                .collect(Collectors.toList());
+        byte[] csv = CsvUtils.toCsvBytes(List.of("会员 ID", "币种", "净头寸"), rows);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"netting-run-" + id + "-positions.csv\"")
+                .body(csv);
     }
 
     @PostMapping("/{id}/settle")
