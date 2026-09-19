@@ -32,13 +32,21 @@
           </el-descriptions-item>
         </el-descriptions>
 
-        <h3 style="margin:20px 0 10px">净头寸</h3>
+        <h3 style="margin:20px 0 10px">净头寸
+          <el-button
+            size="small"
+            style="margin-left:12px"
+            :loading="exporting"
+            @click="exportPositions"
+          >导出净头寸 CSV</el-button>
+        </h3>
         <el-table :data="detail.positions" stripe>
           <el-table-column prop="memberId" label="会员 ID" min-width="220">
             <template #default="{ row }"><span class="mono">{{ row.memberId }}</span></template>
           </el-table-column>
           <el-table-column prop="currency" label="币种" width="90" />
           <el-table-column prop="netAmount" label="净头寸" min-width="160" />
+          <template #empty>该批次无净头寸数据（导出将得到仅含表头的空表）</template>
         </el-table>
 
         <h3 style="margin:20px 0 10px">参与义务</h3>
@@ -60,13 +68,14 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import api from '../api/client'
+import api, { downloadFile } from '../api/client'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
 const route = useRoute()
 const loading = ref(false)
 const settling = ref(false)
+const exporting = ref(false)
 const detail = ref(null)
 
 const alreadySettled = computed(() =>
@@ -96,6 +105,23 @@ async function settle() {
     await load()
   } finally {
     settling.value = false
+  }
+}
+
+// 按当前批次导出净头寸：服务端只查该 runId 的头寸，前端不拼任何数据行
+async function exportPositions() {
+  exporting.value = true
+  try {
+    const blob = await downloadFile(`/netting-runs/${route.params.id}/positions/export`)
+    const lineCount = (await blob.text()).split(/\r\n|\n/).filter((l) => l.length > 0).length
+    const dataRows = Math.max(0, lineCount - 1)
+    if (dataRows === 0) {
+      ElMessage.info('该批次无净头寸数据，已导出仅含表头的空表')
+    } else {
+      ElMessage.success(`已导出 ${dataRows} 条净头寸`)
+    }
+  } finally {
+    exporting.value = false
   }
 }
 

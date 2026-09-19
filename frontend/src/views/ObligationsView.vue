@@ -56,6 +56,7 @@
         <el-option v-for="s in ['OPEN','NETTED','SETTLED','CANCELLED']" :key="s" :label="s" :value="s" />
       </el-select>
       <el-button type="primary" @click="load">查询</el-button>
+      <el-button :loading="exporting" @click="exportCsv">导出 CSV</el-button>
     </div>
 
     <div class="card-panel">
@@ -77,6 +78,7 @@
             <el-tag>{{ row.status }}</el-tag>
           </template>
         </el-table-column>
+        <template #empty>当前筛选无义务数据（导出将得到仅含表头的空表）</template>
       </el-table>
     </div>
   </div>
@@ -85,7 +87,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import api from '../api/client'
+import api, { downloadFile } from '../api/client'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
@@ -93,6 +95,7 @@ const members = ref([])
 const rows = ref([])
 const loading = ref(false)
 const saving = ref(false)
+const exporting = ref(false)
 const today = new Date().toISOString().slice(0, 10)
 
 const form = reactive({
@@ -133,6 +136,28 @@ async function load() {
     rows.value = data
   } finally {
     loading.value = false
+  }
+}
+
+// 导出走独立服务端接口，参数与列表查询完全一致；前端不拼任何数据行
+async function exportCsv() {
+  exporting.value = true
+  try {
+    const params = {}
+    if (filters.currency) params.currency = filters.currency
+    if (filters.settleDate) params.settleDate = filters.settleDate
+    if (filters.status) params.status = filters.status
+    const blob = await downloadFile('/obligations/export', params)
+    // 行数以服务端返回的文件为准（首行为表头），不信任本地 rows
+    const lineCount = (await blob.text()).split(/\r\n|\n/).filter((l) => l.length > 0).length
+    const dataRows = Math.max(0, lineCount - 1)
+    if (dataRows === 0) {
+      ElMessage.info('当前筛选无数据，已导出仅含表头的空表')
+    } else {
+      ElMessage.success(`已导出 ${dataRows} 条义务（与当前筛选一致）`)
+    }
+  } finally {
+    exporting.value = false
   }
 }
 

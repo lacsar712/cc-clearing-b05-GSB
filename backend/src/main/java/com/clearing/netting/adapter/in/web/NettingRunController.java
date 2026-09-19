@@ -1,6 +1,7 @@
 package com.clearing.netting.adapter.in.web;
 
 import com.clearing.netting.adapter.in.web.auth.AuthContext;
+import com.clearing.netting.adapter.in.web.support.CsvWriter;
 import com.clearing.netting.application.NettingApplicationService;
 import com.clearing.netting.domain.model.NetPosition;
 import com.clearing.netting.domain.model.NettingRun;
@@ -10,6 +11,7 @@ import com.clearing.netting.domain.model.TradeObligation;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,7 +19,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.StringWriter;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -26,6 +30,11 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/netting-runs")
 public class NettingRunController {
+
+    /** 与批次详情页「净头寸」表格列一一对应。 */
+    private static final String[] POSITION_EXPORT_HEADERS = {
+            "会员 ID", "币种", "净头寸"
+    };
 
     private final NettingApplicationService nettingService;
 
@@ -67,6 +76,27 @@ public class NettingRunController {
     public List<PositionResponse> positions(@PathVariable("id") String id) {
         AuthContext.require();
         return nettingService.getPositions(id).stream().map(PositionResponse::from).collect(Collectors.toList());
+    }
+
+    /**
+     * 批次净头寸导出：只导出该批次的净头寸，行列与详情页「净头寸」表格逐列对齐；
+     * 批次没有净头寸时只输出表头，绝不导出其他批次或 seed 全量数据。只读，viewer 可调用。
+     */
+    @GetMapping("/{id}/positions/export")
+    public ResponseEntity<byte[]> exportPositions(@PathVariable("id") String id) throws Exception {
+        AuthContext.require();
+        List<NetPosition> positions = nettingService.getPositions(id);
+        NettingRun run = nettingService.getRun(id);
+
+        StringWriter writer = new StringWriter();
+        CsvWriter.write(writer, POSITION_EXPORT_HEADERS, () -> positions.stream().map(p -> new String[] {
+                p.getMemberId(),
+                p.getCurrency(),
+                p.getNetAmount().toPlainString()
+        }).iterator());
+
+        String filename = "net_positions_" + run.getRunId() + ".csv";
+        return CsvWriter.download(filename, writer.toString().getBytes(StandardCharsets.UTF_8));
     }
 
     @PostMapping("/{id}/settle")
